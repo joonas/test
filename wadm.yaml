@@ -1,0 +1,86 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: secrets
+  annotations:
+    version: v0.0.3
+spec:
+  policies:
+    - name: vault
+      type: policy.secret.wasmcloud.dev/v1alpha1
+      properties:
+        backend: vault
+        role_name: demo-role
+
+  components:
+    - name: hello
+      type: component
+      properties:
+        image: ttl.sh/8e02eee9-247a-4b29-a6e8-f24263010f83:8h
+        secrets:
+          - name: api_password
+            properties:
+              key: api_password
+              field: api_password
+              policy: vault
+      traits:
+        - type: spreadscaler
+          properties:
+            instances: 1
+        - type: link
+          properties:
+            namespace: wasi
+            package: keyvalue
+            interfaces: [atomics, store]
+            target:
+              name: kvredis
+              secrets:
+                - name: redis_password
+                  properties:
+                    key: default_redis_password
+                    field: default_redis_password
+                    policy: vault
+              config:
+                - name: url
+                  properties:
+                    url: redis-master.default.svc.cluster.local:6379
+
+    - name: httpserver
+      type: capability
+      properties:
+        image: ghcr.io/wasmcloud/http-server:0.21.0
+      traits:
+        - type: daemonscaler
+          properties:
+            instances: 1
+        - type: link
+          properties:
+            target: hello
+            namespace: wasi
+            package: http
+            interfaces: [incoming-handler]
+            source_config:
+              - name: default-http
+                properties:
+                  address: 0.0.0.0:8080
+
+    - name: kvredis
+      type: capability
+      properties:
+        image: ttl.sh/d67d97cd-e586-4eeb-acc7-17d680b1c417:8h
+        secrets:
+          - name: default_redis_password
+            properties:
+              key: default_redis_password
+              field: default_redis_password 
+              policy: vault
+        config:
+          - name: url
+            properties:
+              url: redis-master.default.svc.cluster.local:6379
+      traits:
+        - type: daemonscaler
+          properties:
+            instances: 1
+
+
